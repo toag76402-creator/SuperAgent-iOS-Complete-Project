@@ -102,28 +102,57 @@ class AgentBrain: NSObject, ObservableObject, PHPhotoLibraryChangeObserver {
         req.addValue("application/json", forHTTPHeaderField: "Content-Type")
         req.httpBody = try? JSONSerialization.data(withJSONObject: payload)
         
-        URLSession.shared.dataTask(with: req) { data, _, err in
+        URLSession.shared.dataTask(with: req) { data, response, err in
             DispatchQueue.main.async {
                 self.isThinking = false
                 if let err = err {
                     self.responseLog = "هەڵەی پەیوەندی: \(err.localizedDescription)"
                     return
                 }
-                guard let data = data,
-                      let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                      let choices = json["choices"] as? [[String: Any]],
-                      let msg = choices.first?["message"] as? [String: Any],
-                      let content = msg["content"] as? String else {
-                    self.responseLog = "هەڵە لە خوێندنەوەی وەڵامی مۆدێلەکە."
+                let statusCode = (response as? HTTPURLResponse)?.statusCode
+                guard let data = data else {
+                    self.responseLog = "وەڵام لە API نەگەیشت. \(statusCode.map { "HTTP \($0)" } ?? "")"
                     return
                 }
-                
+                if let statusCode = statusCode, !(200...299).contains(statusCode) {
+                    self.responseLog = self.apiErrorDescription(from: data, statusCode: statusCode, apiKey: cfg.apiKey)
+                    return
+                }
+                guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+                    self.responseLog = "وەڵامی API فۆرماتی JSON ـی دروستی نییە. \(statusCode.map { "HTTP \($0)" } ?? "")"
+                    return
+                }
+                if let error = json["error"] as? [String: Any] {
+                    let message = error["message"] as? String ?? "هەڵەی نەناسراوی API"
+                    self.responseLog = "هەڵەی API \(statusCode.map { "(HTTP \($0)) " } ?? ""): \(message.replacingOccurrences(of: cfg.apiKey, with: "[hidden]"))"
+                    return
+                }
+                guard let choices = json["choices"] as? [[String: Any]],
+                      let msg = choices.first?["message"] as? [String: Any],
+                      let content = msg["content"] as? String else {
+                    let keys = json.keys.sorted().joined(separator: ", ")
+                    self.responseLog = "شێوازی وەڵامی API چاوەڕوانکراو نییە. HTTP \(statusCode.map(String.init) ?? "?"). بەشە بەردەستەکان: \(keys)"
+                    return
+                }
                 self.responseLog = content
                 VoiceEngine.shared.speak(content)
                 self.processAgentActionsAndVectors(from: content, originalImage: image)
                 FloatingPiPController.shared.updateOverlay(coords: self.coordinatesDisplay, text: content)
             }
         }.resume()
+    }
+
+    private func apiErrorDescription(from data: Data, statusCode: Int, apiKey: String) -> String {
+        if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+            let error = json["error"] as? [String: Any]
+            let message = (error?["message"] as? String)
+                ?? (json["message"] as? String)
+                ?? (error?["status"] as? String)
+                ?? "وەڵامی API هەڵەیە."
+            let safeMessage = message.replacingOccurrences(of: apiKey, with: "[hidden]")
+            return "هەڵەی API (HTTP \(statusCode)): \(safeMessage)"
+        }
+        return "هەڵەی API (HTTP \(statusCode))؛ وەڵامەکە JSON نییە."
     }
     
     private func processAgentActionsAndVectors(from text: String, originalImage: UIImage?) {
