@@ -1,0 +1,35 @@
+name: SuperAgent
+options:
+  bundleIdPrefix: com.custom.superagent
+  deploymentTarget:
+    iOS: "15.0"
+targets:
+  SuperAgent:
+    type: application
+    platform: iOS
+    sources:
+      - SuperAgent
+    info:
+      path: SuperAgent/Info.plist
+      properties:
+        CFBundleDisplayName: SuperAgent
+        UILaunchScreen: {}
+        UIBackgroundModes:
+          - audio
+          - fetch
+          - processing
+        NSPhotoLibraryUsageDescription: "پێویستە بۆ شیکاریی ڕاستەوخۆی وێنەی شاشە و دیاریکردنی پۆتانی BOTB."
+        NSPhotoLibraryAddUsageDescription: "پێویستە بۆ پاشەکەوتکردنی وێنە دەستکاریکراوەکان و هێڵە ئەندازەییەکان."
+        NSMicrophoneUsageDescription: "پێویستە بۆ فەرمانی دەنگیی ڕاستەوخۆ."
+        NSSpeechRecognitionUsageDescription: "پێویستە بۆ گۆڕینی دەنگ بۆ فەرمان."
+        UIFileSharingEnabled: true
+        LSSupportsOpeningDocumentsInPlace: true
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.custom.superagent.ai
+        MARKETING_VERSION: "2.0.0"
+        CURRENT_PROJECT_VERSION: "1"
+        CODE_SIGN_IDENTITY: ""
+        CODE_SIGNING_REQUIRED: "NO"
+        CODE_SIGNING_ALLOWED: "NO"
+        ENABLE_BITCODE: "NO"

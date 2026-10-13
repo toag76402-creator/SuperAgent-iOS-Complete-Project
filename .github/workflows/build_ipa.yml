@@ -1,0 +1,45 @@
+name: Build SuperAgent IPA
+
+on:
+  push:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  build-ipa:
+    runs-on: macos-14
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate Xcode Project
+        run: xcodegen generate
+
+      - name: Compile Unsigned iOS App
+        run: |
+          xcodebuild clean build \
+            -project SuperAgent.xcodeproj \
+            -scheme SuperAgent \
+            -sdk iphoneos \
+            -configuration Release \
+            -arch arm64 \
+            -derivedDataPath ./build \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO
+
+      - name: Package into SuperAgent.ipa
+        run: |
+          rm -rf Payload SuperAgent.ipa
+          mkdir -p Payload
+          cp -r ./build/Build/Products/Release-iphoneos/SuperAgent.app Payload/
+          zip -r9 SuperAgent.ipa Payload
+
+      - name: Upload Ready SuperAgent.ipa
+        uses: actions/upload-artifact@v4
+        with:
+          name: SuperAgent-Ready-To-Sign-IPA
+          path: SuperAgent.ipa
