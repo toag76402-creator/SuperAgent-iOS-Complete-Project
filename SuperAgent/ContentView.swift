@@ -200,6 +200,7 @@ struct ControlCenterSettingsView: View {
     @State private var newRuleText: String = ""
     @State private var newMacroTitle: String = ""
     @State private var newMacroPrompt: String = ""
+    @State private var apiTestStatus: String = ""
     @Environment(\.presentationMode) var presentationMode
 
     var body: some View {
@@ -245,6 +246,15 @@ struct ControlCenterSettingsView: View {
                         .font(.caption)
                     SecureField("کلیلی Gemini API", text: $config.apiKey)
                     TextField("ناوی مۆدێل (نموونە: gemini-3.8-flash)", text: $config.selectedModel)
+                    Button("تاقیکردنەوەی پەیوەندی Gemini") {
+                        apiTestStatus = "⏳ پەیوەندی بە Gemini ـەوە تاقی دەکرێتەوە..."
+                        brain.testAPIConnection { apiTestStatus = $0 }
+                    }
+                    if !apiTestStatus.isEmpty {
+                        Text(apiTestStatus)
+                            .font(.caption)
+                            .textSelection(.enabled)
+                    }
                     Text("لە کاتی لایڤدا، وێنە فریمە گۆڕاوەکان نزیکەی هەر ٢ چرکە جارێک بۆ ئەم Gemini Endpoint ـە دەنێردرێن.")
                         .font(.caption2)
                         .foregroundColor(.secondary)
