@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   build-ipa:
-    runs-on: macos-latest
+    runs-on: macos-15-intel
     timeout-minutes: 40
     steps:
       - name: Checkout
