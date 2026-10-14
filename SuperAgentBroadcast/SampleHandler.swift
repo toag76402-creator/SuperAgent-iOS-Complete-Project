@@ -99,8 +99,7 @@ final class SampleHandler: RPBroadcastSampleHandler {
             finishWithMessage("کلیلی Gemini لە Settings ـدا دانەنراوە.")
             return
         }
-        let apiKey = keyValue.trimmingCharacters(in: .whitespacesAndNewlines)
-            .replacingOccurrences(of: #"(?i)^Bearer\s+"#, with: "", options: .regularExpression)
+        let apiKey = normalizedAPIKey(keyValue)
         guard !apiKey.isEmpty else {
             finishWithMessage("کلیلی Gemini لە Settings ـدا دانەنراوە.")
             return
@@ -154,7 +153,9 @@ final class SampleHandler: RPBroadcastSampleHandler {
                 return
             }
             guard (200...299).contains(status) else {
-                self.storeResponse("هەڵەی Gemini لە لایڤدا: HTTP \(status). کلیل و Endpoint ـی Settings بپشکنە.")
+                let detail = self.providerErrorMessage(from: data, apiKey: apiKey)
+                let hint = status == 401 || status == 403 ? "؛ کلیلی Gemini، جۆری API key، و Endpoint بپشکنە." : ""
+                self.storeResponse("هەڵەی Gemini لە لایڤدا: HTTP \(status). \(detail)\(hint)")
                 return
             }
             guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
@@ -177,6 +178,26 @@ final class SampleHandler: RPBroadcastSampleHandler {
               let match = regex.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)),
               let range = Range(match.range(at: 1), in: text) else { return nil }
         return Int(text[range])
+    }
+
+    private func normalizedAPIKey(_ raw: String) -> String {
+        var key = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        key = key.replacingOccurrences(of: #"(?i)^Bearer\s+"#, with: "", options: .regularExpression)
+        key = key.trimmingCharacters(in: CharacterSet(charactersIn: "\"'`“”‘’"))
+        return key.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private func providerErrorMessage(from data: Data, apiKey: String) -> String {
+        guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            return "وەڵامی API JSON نییە."
+        }
+        let error = json["error"] as? [String: Any]
+        let message = (error?["message"] as? String)
+            ?? (json["message"] as? String)
+            ?? (error?["status"] as? String)
+            ?? "وەڵامی پڕۆڤایدەر وردەکاریی زیاتر نادات."
+        let safeMessage = message.replacingOccurrences(of: apiKey, with: "[hidden]")
+        return String(safeMessage.prefix(240))
     }
 
     private func storeResponse(_ text: String) {
