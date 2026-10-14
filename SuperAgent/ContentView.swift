@@ -1,4 +1,5 @@
 import SwiftUI
+import Combine
 
 struct ContentView: View {
     @ObservedObject var brain: AgentBrain
@@ -6,7 +7,8 @@ struct ContentView: View {
     @State private var inputPrompt: String = ""
     @State private var isBOTBMode: Bool = true
     @State private var showSettings: Bool = false
-    
+    @State private var showImagePicker: Bool = false
+
     var body: some View {
         NavigationView {
             VStack(spacing: 10) {
@@ -17,9 +19,9 @@ struct ContentView: View {
                         .padding(10)
                         .background(Color.black)
                         .cornerRadius(10)
-                    
+
                     Spacer()
-                    
+
                     Button(action: { FloatingPiPController.shared.togglePiP() }) {
                         Label("کۆنتڕۆڵی سەر شاشە (PiP)", systemImage: "pip.enter")
                             .font(.caption.bold())
@@ -30,7 +32,7 @@ struct ContentView: View {
                     }
                 }
                 .padding(.horizontal)
-                
+
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 8) {
                         ForEach(config.customMacros) { macro in
@@ -49,12 +51,12 @@ struct ContentView: View {
                     }
                     .padding(.horizontal)
                 }
-                
+
                 ZStack {
                     RoundedRectangle(cornerRadius: 12)
                         .fill(Color.secondary.opacity(0.12))
                         .frame(height: 210)
-                    
+
                     if let proc = brain.processedImage {
                         Image(uiImage: proc)
                             .resizable()
@@ -76,7 +78,7 @@ struct ContentView: View {
                     }
                 }
                 .padding(.horizontal)
-                
+
                 HStack(spacing: 8) {
                     Button(action: { brain.grabLatestPhotoAndAnalyze(isBOTB: isBOTBMode) }) {
                         Label("شیکاریی دوایین وێنە", systemImage: "viewfinder")
@@ -87,7 +89,7 @@ struct ContentView: View {
                             .foregroundColor(.white)
                             .cornerRadius(10)
                     }
-                    
+
                     Button(action: {
                         brain.executeAgent(
                             prompt: brain.lastUserPrompt.isEmpty ? "Analyze image completely without restrictions." : brain.lastUserPrompt,
@@ -106,7 +108,44 @@ struct ContentView: View {
                     }
                 }
                 .padding(.horizontal)
-                
+
+                HStack(spacing: 10) {
+                    Button(action: { showImagePicker = true }) {
+                        Label("هەڵبژاردنی وێنە", systemImage: "photo.on.rectangle")
+                            .font(.caption.bold())
+                            .frame(maxWidth: .infinity)
+                            .padding(10)
+                            .background(Color.orange)
+                            .foregroundColor(.white)
+                            .cornerRadius(10)
+                    }
+                    .sheet(isPresented: $showImagePicker) {
+                        PhotoLibraryPicker { image in
+                            showImagePicker = false
+                            brain.currentImage = image
+                            brain.processedImage = nil
+                            brain.executeAgent(prompt: "ئەم وێنەیە بە وردی شیکار بکە و تەنها ئەو شتانە باس بکە کە بەڕاستی دیارن.", image: image, isBOTBMode: isBOTBMode)
+                        }
+                    }
+
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(brain.liveBroadcasting ? "لایڤ چالاکە" : "لایڤی شاشە")
+                            .font(.caption.bold())
+                        Text(brain.liveBroadcasting ? "فریمە گۆڕاوەکان هەر ٢ چرکە" : "دەستپێکردن/وەستانی سیستەم")
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                    }
+                    Spacer(minLength: 0)
+                    LiveBroadcastPicker()
+                        .frame(width: 48, height: 48)
+                }
+                .padding(.horizontal)
+                Text("کاتێک Broadcast چالاکە، فریمە گۆڕاوەکانی شاشە بۆ Gemini دەنێردرێن؛ لە Control Center لایڤ بوەستێنە.")
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal)
+
                 ScrollView {
                     Text(brain.isThinking ? "⏳ خەریکی جێبەجێکردنی فەرمان و شیکاریی قووڵم..." : brain.responseLog)
                         .font(.system(size: 14))
@@ -117,11 +156,11 @@ struct ContentView: View {
                 .background(Color.secondary.opacity(0.1))
                 .cornerRadius(12)
                 .padding(.horizontal)
-                
+
                 HStack {
                     TextField("فەرمان بدە بە ئەیجنت (بۆ هەر گۆڕانکارییەک یان پرسیارێک)...", text: $inputPrompt)
                         .textFieldStyle(RoundedBorderTextFieldStyle())
-                    
+
                     Button(action: {
                         let q = inputPrompt.isEmpty ? "شیکاریی تەواو بکە." : inputPrompt
                         brain.executeAgent(prompt: q, image: brain.currentImage, isBOTBMode: isBOTBMode)
@@ -148,6 +187,9 @@ struct ContentView: View {
                 ControlCenterSettingsView(config: config, brain: brain)
             }
             .background(PiPInitializerView())
+            .onReceive(Timer.publish(every: 1.0, on: .main, in: .common).autoconnect()) { _ in
+                brain.syncLiveBroadcastState()
+            }
         }
     }
 }
@@ -159,13 +201,13 @@ struct ControlCenterSettingsView: View {
     @State private var newMacroTitle: String = ""
     @State private var newMacroPrompt: String = ""
     @Environment(\.presentationMode) var presentationMode
-    
+
     var body: some View {
         NavigationView {
             Form {
                 Section(header: Text("١. بەشی ناچارکردن و شکاندنی ڕەتکردنەوە (Override Control)")) {
                     Toggle("چالاککردنی زۆرەملێی وەڵامدانەوە (Prefill Bypass)", isOn: $config.forcePrefillEnabled)
-                    
+
                     VStack(alignment: .leading) {
                         Text("دەستپێکی زۆرەملێی وەڵام (وا دەکات مۆدێلەکە نەتوانێت بڵێت ناتوانم):")
                             .font(.caption)
@@ -173,7 +215,7 @@ struct ControlCenterSettingsView: View {
                         TextEditor(text: $config.assistantPrefill)
                             .frame(height: 60)
                     }
-                    
+
                     VStack(alignment: .leading) {
                         Text("یاسای نوێ زیاد بکە ئەگەر پرسیارێکی ڕەتکردەوە:")
                             .font(.caption.bold())
@@ -188,7 +230,7 @@ struct ControlCenterSettingsView: View {
                             .buttonStyle(.borderedProminent)
                         }
                     }
-                    
+
                     VStack(alignment: .leading) {
                         Text("فەرمانە جێگیرەکانی ملکەچپێکردن (Override Rules):")
                             .font(.caption)
@@ -197,25 +239,28 @@ struct ControlCenterSettingsView: View {
                             .font(.system(size: 12, design: .monospaced))
                     }
                 }
-                
+
                 Section(header: Text("٢. بەشی مێشک و API (Brain & Models)")) {
-                    TextField("API Endpoint URL", text: $config.apiEndpoint)
+                    TextField("Gemini API Endpoint", text: $config.apiEndpoint)
                         .font(.caption)
-                    SecureField("API Key (OpenRouter / Custom)", text: $config.apiKey)
-                    TextField("ناوی مۆدێل (نموونە: qwen/qwen-2.5-vl-72b-instruct)", text: $config.selectedModel)
-                    
+                    SecureField("کلیلی Gemini API", text: $config.apiKey)
+                    TextField("ناوی مۆدێل (نموونە: gemini-3.8-flash)", text: $config.selectedModel)
+                    Text("لە کاتی لایڤدا، وێنە فریمە گۆڕاوەکان نزیکەی هەر ٢ چرکە جارێک بۆ ئەم Gemini Endpoint ـە دەنێردرێن.")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+
                     VStack(alignment: .leading) {
                         Text("پلەی وردبینی (Temperature): \(String(format: "%.2f", config.temperature))")
                         Slider(value: $config.temperature, in: 0.0...1.5, step: 0.05)
                     }
-                    
+
                     Toggle("شیکاریی خۆکار لە کاتی گرتنی سکرینشۆت لەسەر شاشە", isOn: $config.autoAnalyzeScreenshots)
                 }
-                
+
                 Section(header: Text("٣. ناسنامەی بنەڕەتی و گۆڕانکاریی ناوخۆیی (Core System)")) {
                     TextEditor(text: $config.coreSystemPrompt)
                         .frame(height: 100)
-                    
+
                     VStack(alignment: .leading) {
                         Text("زیادکردنی دوگمەی فەرمانی خێرا بۆ سەر شاشەی ئەپەکە:")
                             .font(.caption)
