@@ -32,7 +32,7 @@ enum APIRequestRouter {
     static let openRouterEndpoint = "https://openrouter.ai/api/v1/chat/completions"
     static let geminiBaseURL = "https://generativelanguage.googleapis.com"
     static let defaultOpenRouterModel = "google/gemini-2.5-pro"
-    static let defaultGeminiModel = "gemini-3.1-pro-preview"
+    static let defaultGeminiModel = "gemini-3.8-flash"
 
     static func normalizedAPIKey(_ raw: String) -> String {
         let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -82,7 +82,7 @@ enum APIRequestRouter {
             guard model.contains("/") else { return defaultOpenRouterModel }
             return model
         case .gemini:
-            if model.isEmpty || model == "gemini-2.5-pro" {
+            if model.isEmpty || model == "gemini-2.5-pro" || model == "gemini-3.1-pro-preview" {
                 return defaultGeminiModel
             }
             if model.hasPrefix("models/") {
@@ -187,6 +187,14 @@ enum APIRequestRouter {
             .replacingOccurrences(of: "\r", with: " ")
             .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         return body.isEmpty ? "The provider returned a non-JSON response." : String(body.prefix(180))
+    }
+
+    static func httpErrorMessage(statusCode: Int, data: Data, route: APIRequestRoute) -> String {
+        let details = errorDetails(from: data, apiKey: route.apiKey)
+        if statusCode == 429 && route.provider == .gemini {
+            return "هەڵەی API (HTTP 429): سنووری quota ـی Google Gemini بۆ ئەم پڕۆژە/مۆدێلە تێپەڕیوە. کلیل یان Endpoint ناتوانێت quota زیاد بکات؛ لە AI Studio سنووری خۆت بپشکنە یان چاوەڕێی نوێبوونەوە بکە.\n\(details)\nURL: \(route.safeEndpoint)"
+        }
+        return "هەڵەی API (HTTP \(statusCode)): \(details)\nURL: \(route.safeEndpoint)"
     }
 
     static func redactedEndpoint(from url: URL) -> String {
