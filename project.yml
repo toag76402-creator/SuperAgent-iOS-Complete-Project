@@ -9,6 +9,9 @@ targets:
     platform: iOS
     sources:
       - SuperAgent
+    dependencies:
+      - target: SuperAgentBroadcast
+        embed: true
     info:
       path: SuperAgent/Info.plist
       properties:
@@ -27,9 +30,32 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.custom.superagent.ai
+        CODE_SIGN_ENTITLEMENTS: SuperAgent/SuperAgent.entitlements
         MARKETING_VERSION: "2.0.0"
         CURRENT_PROJECT_VERSION: "1"
         CODE_SIGN_IDENTITY: ""
         CODE_SIGNING_REQUIRED: "NO"
         CODE_SIGNING_ALLOWED: "NO"
         ENABLE_BITCODE: "NO"
+  SuperAgentBroadcast:
+    type: app-extension
+    platform: iOS
+    sources:
+      - SuperAgentBroadcast
+    info:
+      properties:
+        CFBundleDisplayName: SuperAgent Live Screen
+        NSExtension:
+          NSExtensionAttributes:
+            RPBroadcastProcessMode: RPBroadcastProcessModeSampleBuffer
+          NSExtensionPointIdentifier: com.apple.broadcast-services-upload
+          NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).SampleHandler
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.custom.superagent.ai.broadcast
+        CODE_SIGN_ENTITLEMENTS: SuperAgentBroadcast/SuperAgentBroadcast.entitlements
+        APPLICATION_EXTENSION_API_ONLY: "YES"
+        IPHONEOS_DEPLOYMENT_TARGET: "15.0"
+        CODE_SIGN_IDENTITY: ""
+        CODE_SIGNING_REQUIRED: "NO"
+        CODE_SIGNING_ALLOWED: "NO"
