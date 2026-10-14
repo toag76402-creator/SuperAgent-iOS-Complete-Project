@@ -63,13 +63,17 @@ jobs:
           set -euo pipefail
           APP="$PWD/build/Build/Products/Release-iphoneos/SuperAgent.app"
           APPEX="$APP/PlugIns/SuperAgentBroadcast.appex"
-          test -d "$APP"
-          test -d "$APPEX"
-          test -f "$APP/SuperAgent"
-          test -f "$APPEX/SuperAgentBroadcast"
-          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$APP/Info.plist")" = "com.custom.superagent.ai"
-          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$APPEX/Info.plist")" = "com.custom.superagent.ai.broadcast"
-          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP/Info.plist")" = "3.0.0"
+          [[ -d "$APP" ]] || { echo "Missing app bundle: $APP"; exit 1; }
+          [[ -d "$APPEX" ]] || { echo "Missing ReplayKit extension: $APPEX"; exit 1; }
+          [[ -f "$APP/SuperAgent" ]] || { echo "Missing app executable"; exit 1; }
+          [[ -f "$APPEX/SuperAgentBroadcast" ]] || { echo "Missing extension executable"; exit 1; }
+          APP_BUNDLE_ID="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$APP/Info.plist")"
+          EXTENSION_BUNDLE_ID="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$APPEX/Info.plist")"
+          APP_VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP/Info.plist")"
+          printf 'App bundle ID: %s\nExtension bundle ID: %s\nApp version: %s\n' "$APP_BUNDLE_ID" "$EXTENSION_BUNDLE_ID" "$APP_VERSION"
+          [[ "$APP_BUNDLE_ID" == "com.custom.superagent.ai" ]] || { echo "Unexpected app bundle ID"; exit 1; }
+          [[ "$EXTENSION_BUNDLE_ID" == "com.custom.superagent.ai.broadcast" ]] || { echo "Unexpected extension bundle ID"; exit 1; }
+          [[ "$APP_VERSION" == "3.0.0" ]] || { echo "Unexpected app version"; exit 1; }
 
       - name: Package unsigned IPA
         run: |

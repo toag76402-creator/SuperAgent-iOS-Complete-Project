@@ -17,6 +17,7 @@ targets:
       path: SuperAgent/Info.plist
       properties:
         CFBundleDisplayName: SuperAgent
+        CFBundleShortVersionString: "$(MARKETING_VERSION)"
         UILaunchScreen: {}
         UIBackgroundModes:
           - audio
