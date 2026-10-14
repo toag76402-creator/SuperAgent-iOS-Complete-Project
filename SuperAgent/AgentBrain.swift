@@ -218,9 +218,8 @@ class AgentBrain: NSObject, ObservableObject, PHPhotoLibraryChangeObserver {
     }
 
     private func apiErrorDescription(from data: Data, statusCode: Int, route: APIRequestRoute) -> String {
-        let details = APIRequestRouter.errorDetails(from: data, apiKey: route.apiKey)
         NSLog("[SuperAgent] HTTP %d from URL: %@", statusCode, route.safeEndpoint)
-        return "هەڵەی API (HTTP \(statusCode)): \(details)\nURL: \(route.safeEndpoint)"
+        return APIRequestRouter.httpErrorMessage(statusCode: statusCode, data: data, route: route)
     }
 
     private func processAgentActionsAndVectors(from text: String, originalImage: UIImage?) {
