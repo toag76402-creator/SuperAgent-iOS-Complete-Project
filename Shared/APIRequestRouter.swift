@@ -33,6 +33,8 @@ enum APIRequestRouter {
     static let geminiBaseURL = "https://generativelanguage.googleapis.com"
     static let defaultOpenRouterModel = "google/gemini-2.5-pro"
     static let defaultGeminiModel = "gemini-3.8-flash"
+    static let defaultCustomEndpoint = "https://ollama.com/v1/chat/completions"
+    static let defaultCustomModel = "gemma4:31b"
 
     static func normalizedAPIKey(_ raw: String) -> String {
         let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -57,9 +59,14 @@ enum APIRequestRouter {
 
     static func detectedProvider(for rawAPIKey: String, endpoint rawEndpoint: String = "") -> APIProviderKind {
         let key = normalizedAPIKey(rawAPIKey)
-        if key.hasPrefix("sk-or-v1-") { return .openRouter }
         let endpointHost = URLComponents(string: normalizedEndpoint(rawEndpoint))?.host?.lowercased()
-        if key.hasPrefix("AIza") || endpointHost == "generativelanguage.googleapis.com" { return .gemini }
+        if endpointHost == "openrouter.ai" { return .openRouter }
+        if endpointHost == "generativelanguage.googleapis.com" { return .gemini }
+        // An explicitly configured non-default host wins over a key prefix. This
+        // permits an Ollama/custom-compatible endpoint even if an old Gemini key remains saved.
+        if let endpointHost, !endpointHost.isEmpty { return .custom }
+        if key.hasPrefix("sk-or-v1-") { return .openRouter }
+        if key.hasPrefix("AIza") { return .gemini }
         return .custom
     }
 
@@ -67,7 +74,7 @@ enum APIRequestRouter {
         switch provider {
         case .openRouter: return openRouterEndpoint
         case .gemini: return geminiEndpoint(for: defaultGeminiModel)
-        case .custom: return ""
+        case .custom: return defaultCustomEndpoint
         }
     }
 
@@ -94,7 +101,7 @@ enum APIRequestRouter {
             }
             return model.hasPrefix("gemini-") ? model : defaultGeminiModel
         case .custom:
-            return model.isEmpty ? defaultGeminiModel : model
+            return model.isEmpty ? defaultCustomModel : model
         }
     }
 

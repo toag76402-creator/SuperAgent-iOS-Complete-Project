@@ -2,45 +2,90 @@ name: Build SuperAgent IPA
 
 on:
   push:
-    branches: [ main, master ]
+    branches: [main, master, voice-tool-ollama]
   workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
   build-ipa:
     runs-on: macos-latest
+    timeout-minutes: 40
     steps:
-      - name: Checkout Repository
+      - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Select Xcode
+        run: |
+          set -euo pipefail
+          sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
+          xcodebuild -version
 
       - name: Install XcodeGen
         run: brew install xcodegen
 
-      - name: Generate Xcode Project
-        run: xcodegen generate
-
-      - name: Compile Unsigned iOS App
+      - name: Generate Xcode project
         run: |
+          set -euo pipefail
+          xcodegen generate
+          test -d SuperAgent.xcodeproj
+
+      - name: Run AgentLoop and tool-safety unit tests
+        run: |
+          set -euo pipefail
+          xcodebuild test \
+            -project SuperAgent.xcodeproj \
+            -scheme SuperAgentTests \
+            -destination 'platform=iOS Simulator,name=iPhone 16,OS=latest' \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO
+
+      - name: Build unsigned iOS app and ReplayKit extension
+        run: |
+          set -euo pipefail
           xcodebuild clean build \
             -project SuperAgent.xcodeproj \
             -scheme SuperAgent \
             -sdk iphoneos \
             -configuration Release \
-            -arch arm64 \
-            -derivedDataPath ./build \
-            CODE_SIGN_IDENTITY="" \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath "$PWD/build" \
+            CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
-            CODE_SIGNING_ALLOWED=NO
-          test -d ./build/Build/Products/Release-iphoneos/SuperAgent.app/PlugIns/SuperAgentBroadcast.appex
+            CODE_SIGN_IDENTITY=""
 
-      - name: Package into SuperAgent.ipa
+      - name: Validate app, extension, and bundle identifiers
         run: |
+          set -euo pipefail
+          APP="$PWD/build/Build/Products/Release-iphoneos/SuperAgent.app"
+          APPEX="$APP/PlugIns/SuperAgentBroadcast.appex"
+          test -d "$APP"
+          test -d "$APPEX"
+          test -f "$APP/SuperAgent"
+          test -f "$APPEX/SuperAgentBroadcast"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$APP/Info.plist")" = "com.custom.superagent.ai"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$APPEX/Info.plist")" = "com.custom.superagent.ai.broadcast"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP/Info.plist")" = "3.0.0"
+
+      - name: Package unsigned IPA
+        run: |
+          set -euo pipefail
+          APP="$PWD/build/Build/Products/Release-iphoneos/SuperAgent.app"
           rm -rf Payload SuperAgent.ipa
           mkdir -p Payload
-          cp -r ./build/Build/Products/Release-iphoneos/SuperAgent.app Payload/
-          zip -r9 SuperAgent.ipa Payload
+          ditto "$APP" Payload/SuperAgent.app
+          /usr/bin/zip -qry SuperAgent.ipa Payload
+          shasum -a 256 SuperAgent.ipa > SuperAgent.ipa.sha256
+          printf '%s\n' 'Unsigned IPA: add your own provisioning profiles and signatures before installation.' > SIGNING_REQUIRED.txt
 
-      - name: Upload Ready SuperAgent.ipa
+      - name: Upload unsigned IPA
         uses: actions/upload-artifact@v4
         with:
           name: SuperAgent-Ready-To-Sign-IPA
-          path: SuperAgent.ipa
+          path: |
+            SuperAgent.ipa
+            SuperAgent.ipa.sha256
+            SIGNING_REQUIRED.txt
+          if-no-files-found: error
+          retention-days: 30

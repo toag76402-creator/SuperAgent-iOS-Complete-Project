@@ -26,14 +26,17 @@ targets:
         NSPhotoLibraryAddUsageDescription: "پێویستە بۆ پاشەکەوتکردنی وێنە دەستکاریکراوەکان و هێڵە ئەندازەییەکان."
         NSMicrophoneUsageDescription: "پێویستە بۆ فەرمانی دەنگیی ڕاستەوخۆ."
         NSSpeechRecognitionUsageDescription: "پێویستە بۆ گۆڕینی دەنگ بۆ فەرمان."
+        NSRemindersUsageDescription: "SuperAgent تەنها دوای approvalی تۆ دەتوانێت بیرخستنەوە دروست بکات."
+        NSRemindersFullAccessUsageDescription: "SuperAgent تەنها بۆ دروستکردنی بیرخستنەوەی داواکراو و پەسەندکراو دەستی پێویستە."
         UIFileSharingEnabled: true
         LSSupportsOpeningDocumentsInPlace: true
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.custom.superagent.ai
         CODE_SIGN_ENTITLEMENTS: SuperAgent/SuperAgent.entitlements
-        MARKETING_VERSION: "2.0.0"
-        CURRENT_PROJECT_VERSION: "1"
+        MARKETING_VERSION: "3.0.0"
+        CURRENT_PROJECT_VERSION: "2"
+        SWIFT_VERSION: "5.0"
         CODE_SIGN_IDENTITY: ""
         CODE_SIGNING_REQUIRED: "NO"
         CODE_SIGNING_ALLOWED: "NO"
@@ -62,3 +65,14 @@ targets:
         CODE_SIGN_IDENTITY: ""
         CODE_SIGNING_REQUIRED: "NO"
         CODE_SIGNING_ALLOWED: "NO"
+  SuperAgentTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - SuperAgentTests
+    dependencies:
+      - target: SuperAgent
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.custom.superagent.ai.tests
+        SWIFT_VERSION: "5.0"
