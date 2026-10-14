@@ -12,6 +12,8 @@ final class SampleHandler: RPBroadcastSampleHandler {
     private var lastSampleCheck = Date.distantPast
     private var lastFingerprint: Data?
     private var requestInFlight = false
+    private var quotaCooldownUntil = Date.distantPast
+    private var nextQuotaCooldownSeconds: TimeInterval = 60
 
     private var shared: UserDefaults? { UserDefaults(suiteName: appGroup) }
 
@@ -47,7 +49,9 @@ final class SampleHandler: RPBroadcastSampleHandler {
         guard sampleBufferType == .video else { return }
         let now = Date()
         stateLock.lock()
-        guard !requestInFlight, now.timeIntervalSince(lastSampleCheck) >= 2.0 else {
+        guard !requestInFlight,
+              now >= quotaCooldownUntil,
+              now.timeIntervalSince(lastSampleCheck) >= 2.0 else {
             stateLock.unlock()
             return
         }
@@ -144,11 +148,26 @@ final class SampleHandler: RPBroadcastSampleHandler {
                 return
             }
             guard (200...299).contains(status) else {
-                let detail = APIRequestRouter.errorDetails(from: data, apiKey: route.apiKey)
                 NSLog("[SuperAgent Live] HTTP %d from URL: %@", status, route.safeEndpoint)
-                self.storeResponse("هەڵەی \(route.provider.displayName) لە لایڤدا: HTTP \(status). \(detail)\nURL: \(route.safeEndpoint)")
+                if status == 429 && route.provider == .gemini {
+                    let retryHeader = (response as? HTTPURLResponse)?.value(forHTTPHeaderField: "Retry-After")
+                    let retryAfter = retryHeader.flatMap { TimeInterval($0) }
+                    self.stateLock.lock()
+                    let delay = max(5, retryAfter ?? self.nextQuotaCooldownSeconds)
+                    self.quotaCooldownUntil = Date().addingTimeInterval(delay)
+                    self.nextQuotaCooldownSeconds = min(self.nextQuotaCooldownSeconds * 2, 3600)
+                    self.stateLock.unlock()
+                    let message = APIRequestRouter.httpErrorMessage(statusCode: status, data: data, route: route)
+                    self.storeResponse("\(message)\nلایڤ بۆ \(Int(delay)) چرکە پشووی دەدات.")
+                    return
+                }
+                self.storeResponse(APIRequestRouter.httpErrorMessage(statusCode: status, data: data, route: route))
                 return
             }
+            self.stateLock.lock()
+            self.quotaCooldownUntil = .distantPast
+            self.nextQuotaCooldownSeconds = 60
+            self.stateLock.unlock()
             guard let content = APIRequestRouter.responseText(from: data, provider: route.provider) else {
                 self.storeResponse("شێوازی وەڵامی لایڤی \(route.provider.displayName) چاوەڕوانکراو نییە.\nURL: \(route.safeEndpoint)")
                 return
