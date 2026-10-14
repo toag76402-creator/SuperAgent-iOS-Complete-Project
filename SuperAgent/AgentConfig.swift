@@ -75,7 +75,7 @@ class AgentConfig: ObservableObject {
     }
 
     var detectedProvider: APIProviderKind {
-        APIRequestRouter.detectedProvider(for: apiKey)
+        APIRequestRouter.detectedProvider(for: apiKey, endpoint: apiEndpoint)
     }
 
     init() {
@@ -89,9 +89,9 @@ class AgentConfig: ObservableObject {
         let savedModel = APIRequestRouter.normalizedModelText(
             shared?.string(forKey: "selectedModel") ?? defaults.string(forKey: "selectedModel") ?? ""
         )
-        let provider = APIRequestRouter.detectedProvider(for: savedKey)
+        let provider = APIRequestRouter.detectedProvider(for: savedKey, endpoint: savedEndpoint)
         let endpoint = provider == .custom
-            ? (savedEndpoint.isEmpty ? APIRequestRouter.geminiEndpointTemplate : savedEndpoint)
+            ? savedEndpoint
             : APIRequestRouter.defaultEndpoint(for: provider)
         let model = APIRequestRouter.modelForSettings(
             savedModel.isEmpty ? APIRequestRouter.defaultGeminiModel : savedModel,
@@ -161,7 +161,7 @@ class AgentConfig: ObservableObject {
     }
 
     private func applyDetectedProviderDefaults() {
-        let provider = APIRequestRouter.detectedProvider(for: apiKey)
+        let provider = APIRequestRouter.detectedProvider(for: apiKey, endpoint: apiEndpoint)
         guard provider != .custom else { return }
         let endpoint = APIRequestRouter.defaultEndpoint(for: provider)
         let model = APIRequestRouter.modelForSettings(selectedModel, provider: provider)
