@@ -195,7 +195,7 @@ struct ControlCenterSettingsView: View {
     var body: some View {
         NavigationView {
             Form {
-                Section(header: Text("API / Ollama Cloud")) {
+                Section(header: Text("API / OpenRouter")) {
                     TextField("API Endpoint", text: $config.apiEndpoint)
                         .font(.caption).keyboardType(.URL)
                         .textInputAutocapitalization(.never).autocorrectionDisabled()
@@ -204,7 +204,7 @@ struct ControlCenterSettingsView: View {
                         .textInputAutocapitalization(.never).autocorrectionDisabled()
                     TextField("Model", text: $config.selectedModel)
                         .textInputAutocapitalization(.never).autocorrectionDisabled()
-                    Text("بنەڕەت: https://ollama.com/v1/chat/completions — gemma4:31b. API key لە IPA دانەنراوە؛ کلیلەکەت تەنها لە ئامێری خۆت داخڵ بکە.")
+                    Text("بنەڕەت: https://openrouter.ai/api/v1/chat/completions — google/gemini-2.5-flash. API key لە IPA دانەنراوە؛ کلیلەکەت تەنها لە ئامێری خۆت داخڵ بکە.")
                         .font(.caption2).foregroundColor(.secondary)
                     Button("تاقیکردنەوەی API") {
                         config.normalizeAPISettings()

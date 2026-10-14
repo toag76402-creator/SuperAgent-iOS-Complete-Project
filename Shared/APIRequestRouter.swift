@@ -31,7 +31,7 @@ struct APIRequestRoute {
 enum APIRequestRouter {
     static let openRouterEndpoint = "https://openrouter.ai/api/v1/chat/completions"
     static let geminiBaseURL = "https://generativelanguage.googleapis.com"
-    static let defaultOpenRouterModel = "google/gemini-2.5-pro"
+    static let defaultOpenRouterModel = "google/gemini-2.5-flash"
     static let defaultGeminiModel = "gemini-3.8-flash"
     static let defaultCustomEndpoint = "https://ollama.com/v1/chat/completions"
     static let defaultCustomModel = "gemma4:31b"

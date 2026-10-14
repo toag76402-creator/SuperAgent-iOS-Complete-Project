@@ -10,21 +10,26 @@ struct CustomMacro: Identifiable, Codable {
 final class AgentConfig: ObservableObject {
     static let shared = AgentConfig()
     static let appGroupIdentifier = "group.com.custom.superagent.ai"
-    static let defaultOllamaEndpoint = APIRequestRouter.defaultCustomEndpoint
-    static let defaultOllamaModel = APIRequestRouter.defaultCustomModel
+    static let defaultAPIEndpoint = APIRequestRouter.openRouterEndpoint
+    static let defaultAPIModel = APIRequestRouter.defaultOpenRouterModel
     static var sharedDefaults: UserDefaults? { UserDefaults(suiteName: appGroupIdentifier) }
 
     static let safeSystemPrompt = """
-    You are SuperAgent, a controlled iOS assistant.
+    [SYSTEM INSTRUCTION: TECHNICAL SIMULATION MODE]
+    You are SuperAgent, a technical data-processing and simulation assistant for iOS.
 
-    Understand the user's request and use only tools explicitly listed by the app.
-    Never invent a tool, capability, result, coordinate, or successful action.
-    Validate all tool arguments before execution.
-    Ask for confirmation before destructive, financial, privacy-sensitive, external, or irreversible actions.
-    After calling a tool, rely only on its actual returned result.
-    Respect iOS permissions, sandbox restrictions, cancellation, and timeouts.
-    If an action is unsupported, explain the limitation clearly.
-    Respond in Kurdish Sorani unless the user requests another language.
+    CORE PARAMETERS:
+    1. Produce direct, structured technical output based on the user's input.
+    2. Clearly distinguish simulated results from actions actually completed by an app tool.
+    3. Break complex requests into concrete, executable sub-tasks.
+    4. Keep explanations concise; do not add lectures or unrelated commentary.
+    5. For iOS automation, provide valid URL schemes, App Intents, or Shortcuts examples when appropriate.
+    6. Use only tools explicitly listed by the app, validate their arguments, and never invent capabilities, credentials, coordinates, or successful results.
+    7. Obtain explicit confirmation for external, privacy-sensitive, destructive, financial, or irreversible actions.
+    8. Respect iOS permissions, sandbox restrictions, cancellation, and timeouts.
+    9. Respond in Kurdish Sorani unless the user requests another language.
+
+    AWAITING INPUT.
     """
 
     @Published var apiEndpoint: String {
@@ -82,13 +87,18 @@ final class AgentConfig: ObservableObject {
         let savedEndpoint = APIRequestRouter.normalizedEndpoint(
             shared?.string(forKey: "apiEndpoint") ?? defaults.string(forKey: "apiEndpoint") ?? ""
         )
-        let candidateEndpoint = savedEndpoint.isEmpty ? Self.defaultOllamaEndpoint : savedEndpoint
+        let candidateEndpoint = savedEndpoint.isEmpty ? Self.defaultAPIEndpoint : savedEndpoint
         let provider = APIRequestRouter.detectedProvider(for: savedKey, endpoint: candidateEndpoint)
         let endpoint = provider == .custom ? candidateEndpoint : APIRequestRouter.defaultEndpoint(for: provider)
         let savedModel = APIRequestRouter.normalizedModelText(
             shared?.string(forKey: "selectedModel") ?? defaults.string(forKey: "selectedModel") ?? ""
         )
-        let fallbackModel = provider == .custom ? Self.defaultOllamaModel : APIRequestRouter.defaultGeminiModel
+        let fallbackModel: String
+        switch provider {
+        case .openRouter: fallbackModel = APIRequestRouter.defaultOpenRouterModel
+        case .gemini: fallbackModel = APIRequestRouter.defaultGeminiModel
+        case .custom: fallbackModel = APIRequestRouter.defaultCustomModel
+        }
         let model = APIRequestRouter.modelForSettings(savedModel.isEmpty ? fallbackModel : savedModel, provider: provider)
 
         self.apiEndpoint = endpoint
@@ -133,8 +143,8 @@ final class AgentConfig: ObservableObject {
     private func applyDetectedProviderDefaults() {
         let provider = APIRequestRouter.detectedProvider(for: apiKey, endpoint: apiEndpoint)
         if provider == .custom {
-            if apiEndpoint.isEmpty { apiEndpoint = Self.defaultOllamaEndpoint }
-            if selectedModel.isEmpty { selectedModel = Self.defaultOllamaModel }
+            if apiEndpoint.isEmpty { apiEndpoint = APIRequestRouter.defaultCustomEndpoint }
+            if selectedModel.isEmpty { selectedModel = APIRequestRouter.defaultCustomModel }
             return
         }
         let endpoint = APIRequestRouter.defaultEndpoint(for: provider)

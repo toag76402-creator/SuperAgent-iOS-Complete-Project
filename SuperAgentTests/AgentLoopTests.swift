@@ -2,6 +2,17 @@ import XCTest
 @testable import SuperAgent
 
 final class AgentLoopTests: XCTestCase {
+    func testOpenRouterDefaultsAreConfigured() {
+        XCTAssertEqual(APIRequestRouter.openRouterEndpoint, "https://openrouter.ai/api/v1/chat/completions")
+        XCTAssertEqual(APIRequestRouter.defaultOpenRouterModel, "google/gemini-2.5-flash")
+    }
+
+    func testDefaultPromptPreservesRealToolResultsAndApproval() {
+        XCTAssertTrue(AgentConfig.safeSystemPrompt.contains("TECHNICAL SIMULATION MODE"))
+        XCTAssertTrue(AgentConfig.safeSystemPrompt.contains("explicit confirmation"))
+        XCTAssertTrue(AgentConfig.safeSystemPrompt.contains("never invent capabilities"))
+    }
+
     func testToolCallJSONIsParsed() {
         let response = #"{"type":"tool_call","name":"readAppStatus","arguments":{}}"#
         guard case .tool(let call) = AgentLoop.decision(from: response) else {
