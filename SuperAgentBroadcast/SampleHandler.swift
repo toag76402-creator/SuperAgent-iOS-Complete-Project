@@ -69,7 +69,7 @@ final class SampleHandler: RPBroadcastSampleHandler {
         stateLock.unlock()
 
         saveLatestFrame(jpeg)
-        sendFrameToGemini(jpeg, width: frame.width, height: frame.height)
+        sendFrameToAPI(jpeg, width: frame.width, height: frame.height)
     }
 
     private func makeJPEG(from pixelBuffer: CVPixelBuffer) -> (data: Data, width: Int, height: Int)? {
@@ -93,26 +93,20 @@ final class SampleHandler: RPBroadcastSampleHandler {
         }
     }
 
-    private func sendFrameToGemini(_ jpeg: Data, width: Int, height: Int) {
+    private func sendFrameToAPI(_ jpeg: Data, width: Int, height: Int) {
         guard let shared,
               let keyValue = shared.string(forKey: "apiKey") else {
-            finishWithMessage("کلیلی Gemini لە Settings ـدا دانەنراوە.")
+            finishWithMessage("کلیلی API لە Settings ـدا دانەنراوە.")
             return
         }
-        let apiKey = normalizedAPIKey(keyValue)
-        guard !apiKey.isEmpty else {
-            finishWithMessage("کلیلی Gemini لە Settings ـدا دانەنراوە.")
+        guard let route = APIRequestRouter.resolve(
+            apiKey: keyValue,
+            endpoint: shared.string(forKey: "apiEndpoint") ?? "",
+            model: shared.string(forKey: "selectedModel") ?? ""
+        ) else {
+            finishWithMessage("Endpoint یان ناوی مۆدێلی API دروست نییە؛ Settings بپشکنە.")
             return
         }
-        let endpoint = (shared.string(forKey: "apiEndpoint") ?? "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions")
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-            .replacingOccurrences(of: "%60", with: "")
-            .replacingOccurrences(of: "`", with: "")
-        guard let url = URL(string: endpoint) else {
-            finishWithMessage("URL ـی Gemini دروست نییە؛ Settings بپشکنە.")
-            return
-        }
-        let model = shared.string(forKey: "selectedModel") ?? "gemini-3.8-flash"
         let base64 = jpeg.base64EncodedString()
         let followUp = shared.string(forKey: "liveCustomPrompt") ?? ""
         let prompt = "ئەمە فریمێکی نوێی شاشەی BOTB ـە، قەبارەی وێنە Width=\(width), Height=\(height) پیکسڵە. تەنها ئەو وردەکارییانە باس بکە کە لە وێنەکەدا بەڕاستی دیارن. گۆڕانکارییە نوێکان بە کورتی بڵێ. ئەگەر پۆتانی تۆپ لێکدەدەیتەوە، دڵنیایی و نادڵنیایی ڕوون بکە و کۆئۆردیناتی پیکسڵی تەنها بە نزیکەیی بدە؛ دڵنیایی ساختە مەدە. وەڵامێکی کورتی کوردی بنووسە و لە کۆتاییدا JSON ـی targetX و targetY دابنێ."
@@ -124,17 +118,14 @@ final class SampleHandler: RPBroadcastSampleHandler {
                 ["type": "image_url", "image_url": ["url": "data:image/jpeg;base64,\(base64)"]]
             ]
         ]]
-        let body: [String: Any] = ["model": model, "temperature": 0.15, "messages": messages]
-        guard let bodyData = try? JSONSerialization.data(withJSONObject: body) else {
-            finishWithMessage("نەتوانرا داواکاریی Gemini دروست بکرێت.")
+        guard let body = APIRequestRouter.makePayload(route: route, temperature: 0.15, messages: messages),
+              let bodyData = try? JSONSerialization.data(withJSONObject: body) else {
+            finishWithMessage("نەتوانرا داواکاریی API دروست بکرێت؛ فۆرماتی وێنە/Settings بپشکنە.")
             return
         }
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
+        var request = URLRequest(url: route.url)
         request.timeoutInterval = 30
-        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.httpBody = bodyData
+        APIRequestRouter.configure(&request, route: route, body: bodyData)
 
         URLSession.shared.dataTask(with: request) { [weak self] data, response, error in
             guard let self else { return }
@@ -144,25 +135,22 @@ final class SampleHandler: RPBroadcastSampleHandler {
                 self.stateLock.unlock()
             }
             if let error {
-                self.storeResponse("هەڵەی پەیوەندیی لایڤ: \(error.localizedDescription)")
+                self.storeResponse("هەڵەی پەیوەندیی لایڤ: \(error.localizedDescription)\nURL: \(route.safeEndpoint)")
                 return
             }
             let status = (response as? HTTPURLResponse)?.statusCode ?? 0
             guard let data else {
-                self.storeResponse("Gemini هیچ وەڵامێکی نەگەیاند. HTTP \(status)")
+                self.storeResponse("API هیچ وەڵامێکی نەگەیاند. HTTP \(status)\nURL: \(route.safeEndpoint)")
                 return
             }
             guard (200...299).contains(status) else {
-                let detail = self.providerErrorMessage(from: data, apiKey: apiKey)
-                let hint = status == 401 || status == 403 ? "؛ کلیلی Gemini، جۆری API key، و Endpoint بپشکنە." : ""
-                self.storeResponse("هەڵەی Gemini لە لایڤدا: HTTP \(status). \(detail)\(hint)")
+                let detail = APIRequestRouter.errorDetails(from: data, apiKey: route.apiKey)
+                NSLog("[SuperAgent Live] HTTP %d from URL: %@", status, route.safeEndpoint)
+                self.storeResponse("هەڵەی \(route.provider.displayName) لە لایڤدا: HTTP \(status). \(detail)\nURL: \(route.safeEndpoint)")
                 return
             }
-            guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                  let choices = json["choices"] as? [[String: Any]],
-                  let message = choices.first?["message"] as? [String: Any],
-                  let content = message["content"] as? String else {
-                self.storeResponse("شێوازی وەڵامی لایڤی Gemini چاوەڕوانکراو نییە.")
+            guard let content = APIRequestRouter.responseText(from: data, provider: route.provider) else {
+                self.storeResponse("شێوازی وەڵامی لایڤی \(route.provider.displayName) چاوەڕوانکراو نییە.\nURL: \(route.safeEndpoint)")
                 return
             }
             self.storeResponse(content)
@@ -178,26 +166,6 @@ final class SampleHandler: RPBroadcastSampleHandler {
               let match = regex.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)),
               let range = Range(match.range(at: 1), in: text) else { return nil }
         return Int(text[range])
-    }
-
-    private func normalizedAPIKey(_ raw: String) -> String {
-        var key = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-        key = key.replacingOccurrences(of: #"(?i)^Bearer\s+"#, with: "", options: .regularExpression)
-        key = key.trimmingCharacters(in: CharacterSet(charactersIn: "\"'`“”‘’"))
-        return key.trimmingCharacters(in: .whitespacesAndNewlines)
-    }
-
-    private func providerErrorMessage(from data: Data, apiKey: String) -> String {
-        guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-            return "وەڵامی API JSON نییە."
-        }
-        let error = json["error"] as? [String: Any]
-        let message = (error?["message"] as? String)
-            ?? (json["message"] as? String)
-            ?? (error?["status"] as? String)
-            ?? "وەڵامی پڕۆڤایدەر وردەکاریی زیاتر نادات."
-        let safeMessage = message.replacingOccurrences(of: apiKey, with: "[hidden]")
-        return String(safeMessage.prefix(240))
     }
 
     private func storeResponse(_ text: String) {
