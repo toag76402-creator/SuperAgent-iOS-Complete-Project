@@ -9,6 +9,7 @@ targets:
     platform: iOS
     sources:
       - SuperAgent
+      - Shared/APIRequestRouter.swift
     dependencies:
       - target: SuperAgentBroadcast
         embed: true
@@ -42,6 +43,7 @@ targets:
     platform: iOS
     sources:
       - SuperAgentBroadcast
+      - Shared/APIRequestRouter.swift
     info:
       path: SuperAgentBroadcast/Info.plist
       properties:
