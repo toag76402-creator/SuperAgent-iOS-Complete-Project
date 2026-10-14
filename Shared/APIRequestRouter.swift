@@ -32,7 +32,7 @@ enum APIRequestRouter {
     static let openRouterEndpoint = "https://openrouter.ai/api/v1/chat/completions"
     static let geminiBaseURL = "https://generativelanguage.googleapis.com"
     static let defaultOpenRouterModel = "google/gemini-2.5-pro"
-    static let defaultGeminiModel = "gemini-2.5-pro"
+    static let defaultGeminiModel = "gemini-3.1-pro-preview"
 
     static func normalizedAPIKey(_ raw: String) -> String {
         let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -82,7 +82,7 @@ enum APIRequestRouter {
             guard model.contains("/") else { return defaultOpenRouterModel }
             return model
         case .gemini:
-            if model.isEmpty || model == "gemini-3.8-flash" {
+            if model.isEmpty || model == "gemini-2.5-pro" {
                 return defaultGeminiModel
             }
             if model.hasPrefix("models/") {
