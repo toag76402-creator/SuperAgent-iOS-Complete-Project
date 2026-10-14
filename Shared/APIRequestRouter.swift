@@ -30,7 +30,7 @@ struct APIRequestRoute {
 
 enum APIRequestRouter {
     static let openRouterEndpoint = "https://openrouter.ai/api/v1/chat/completions"
-    static let geminiEndpointTemplate = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
+    static let geminiBaseURL = "https://generativelanguage.googleapis.com"
     static let defaultOpenRouterModel = "google/gemini-2.5-pro"
     static let defaultGeminiModel = "gemini-2.5-pro"
 
@@ -55,19 +55,24 @@ enum APIRequestRouter {
         raw.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    static func detectedProvider(for rawAPIKey: String) -> APIProviderKind {
+    static func detectedProvider(for rawAPIKey: String, endpoint rawEndpoint: String = "") -> APIProviderKind {
         let key = normalizedAPIKey(rawAPIKey)
         if key.hasPrefix("sk-or-v1-") { return .openRouter }
-        if key.hasPrefix("AIzaSy") { return .gemini }
+        let endpointHost = URLComponents(string: normalizedEndpoint(rawEndpoint))?.host?.lowercased()
+        if key.hasPrefix("AIza") || endpointHost == "generativelanguage.googleapis.com" { return .gemini }
         return .custom
     }
 
     static func defaultEndpoint(for provider: APIProviderKind) -> String {
         switch provider {
         case .openRouter: return openRouterEndpoint
-        case .gemini: return geminiEndpointTemplate
+        case .gemini: return geminiEndpoint(for: defaultGeminiModel)
         case .custom: return ""
         }
+    }
+
+    private static func geminiEndpoint(for model: String) -> String {
+        "\(geminiBaseURL)/v1beta/models/\(model):generateContent"
     }
 
     static func modelForSettings(_ rawModel: String, provider: APIProviderKind) -> String {
@@ -96,7 +101,7 @@ enum APIRequestRouter {
     static func resolve(apiKey rawAPIKey: String, endpoint rawEndpoint: String, model rawModel: String) -> APIRequestRoute? {
         let apiKey = normalizedAPIKey(rawAPIKey)
         guard !apiKey.isEmpty else { return nil }
-        let provider = detectedProvider(for: apiKey)
+        let provider = detectedProvider(for: apiKey, endpoint: rawEndpoint)
         let model = modelForSettings(rawModel, provider: provider)
 
         let endpoint: String
@@ -106,7 +111,7 @@ enum APIRequestRouter {
         case .gemini:
             let allowedModelCharacters = CharacterSet(charactersIn: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._-")
             guard !model.isEmpty, model.unicodeScalars.allSatisfy(allowedModelCharacters.contains) else { return nil }
-            endpoint = "https://generativelanguage.googleapis.com/v1beta/models/\(model):generateContent"
+            endpoint = geminiEndpoint(for: model)
         case .custom:
             endpoint = normalizedEndpoint(rawEndpoint)
         }
