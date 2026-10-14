@@ -140,7 +140,7 @@ struct ContentView: View {
                         .frame(width: 48, height: 48)
                 }
                 .padding(.horizontal)
-                Text("کاتێک Broadcast چالاکە، فریمە گۆڕاوەکانی شاشە بۆ Gemini دەنێردرێن؛ لە Control Center لایڤ بوەستێنە.")
+                Text("کاتێک Broadcast چالاکە، فریمە گۆڕاوەکانی شاشە بۆ پڕۆڤایدەری دیاریکراو دەنێردرێن؛ لە Control Center لایڤ بوەستێنە.")
                     .font(.caption2)
                     .foregroundColor(.secondary)
                     .multilineTextAlignment(.center)
@@ -242,12 +242,27 @@ struct ControlCenterSettingsView: View {
                 }
 
                 Section(header: Text("٢. بەشی مێشک و API (Brain & Models)")) {
-                    TextField("Gemini API Endpoint", text: $config.apiEndpoint)
+                    TextField("API Endpoint", text: $config.apiEndpoint)
                         .font(.caption)
-                    SecureField("کلیلی Gemini API", text: $config.apiKey)
-                    TextField("ناوی مۆدێل (نموونە: gemini-3.8-flash)", text: $config.selectedModel)
-                    Button("تاقیکردنەوەی پەیوەندی Gemini") {
-                        apiTestStatus = "⏳ پەیوەندی بە Gemini ـەوە تاقی دەکرێتەوە..."
+                        .keyboardType(.URL)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        .disabled(config.detectedProvider != .custom)
+                        .onSubmit { config.normalizeAPISettings() }
+                    SecureField("کلیلی API", text: $config.apiKey)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        .onSubmit { config.normalizeAPISettings() }
+                    TextField("ناوی مۆدێل (نموونە: gemini-2.5-pro)", text: $config.selectedModel)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        .onSubmit { config.normalizeAPISettings() }
+                    Text("پڕۆڤایدەر: \(config.detectedProvider.displayName)؛ route بە جۆری کلیلی API دیاری دەکرێت.")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                    Button("تاقیکردنەوەی پەیوەندی API") {
+                        config.normalizeAPISettings()
+                        apiTestStatus = "⏳ پەیوەندی بە پڕۆڤایدەرەوە تاقی دەکرێتەوە..."
                         brain.testAPIConnection { apiTestStatus = $0 }
                     }
                     if !apiTestStatus.isEmpty {
@@ -255,7 +270,7 @@ struct ControlCenterSettingsView: View {
                             .font(.caption)
                             .textSelection(.enabled)
                     }
-                    Text("لە کاتی لایڤدا، وێنە فریمە گۆڕاوەکان نزیکەی هەر ٢ چرکە جارێک بۆ ئەم Gemini Endpoint ـە دەنێردرێن.")
+                    Text("لە کاتی لایڤدا، فریمە گۆڕاوەکانی شاشە نزیکەی هەر ٢ چرکە جارێک بۆ پڕۆڤایدەری دیاریکراو دەنێردرێن.")
                         .font(.caption2)
                         .foregroundColor(.secondary)
 

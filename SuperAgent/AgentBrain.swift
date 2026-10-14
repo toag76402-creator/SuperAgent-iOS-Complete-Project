@@ -94,9 +94,13 @@ class AgentBrain: NSObject, ObservableObject, PHPhotoLibraryChangeObserver {
         if liveBroadcasting {
             AgentConfig.sharedDefaults?.set(prompt, forKey: "liveCustomPrompt")
         }
-        let apiKey = Self.normalizedAPIKey(cfg.apiKey)
+        let apiKey = APIRequestRouter.normalizedAPIKey(cfg.apiKey)
         guard !apiKey.isEmpty else {
             self.responseLog = "⚠️ تکایە لە بەشی سێتینگ (⚙️) کلیلی API داخڵ بکە."
+            return
+        }
+        guard let route = APIRequestRouter.resolve(apiKey: apiKey, endpoint: cfg.apiEndpoint, model: cfg.selectedModel) else {
+            self.responseLog = "Endpoint یان ناوی مۆدێلی API دروست نییە؛ Settings بپشکنە."
             return
         }
 
@@ -138,26 +142,15 @@ class AgentBrain: NSObject, ObservableObject, PHPhotoLibraryChangeObserver {
             messages.append(["role": "assistant", "content": cfg.assistantPrefill])
         }
 
-        let payload: [String: Any] = [
-            "model": cfg.selectedModel,
-            "temperature": cfg.temperature,
-            "messages": messages
-        ]
-
-        var endpoint = cfg.apiEndpoint.trimmingCharacters(in: .whitespacesAndNewlines)
-        while endpoint.hasSuffix("%60") { endpoint.removeLast(3) }
-        while endpoint.hasSuffix(String(UnicodeScalar(96)!)) { endpoint.removeLast() }
-        guard let url = URL(string: endpoint) else {
+        guard let payload = APIRequestRouter.makePayload(route: route, temperature: cfg.temperature, messages: messages),
+              let requestBody = try? JSONSerialization.data(withJSONObject: payload) else {
             self.isThinking = false
-            self.responseLog = "URL ـی API دروست نییە؛ تکایە endpoint ـەکە بپشکنە."
+            self.responseLog = "نەتوانرا داواکاریی API دروست بکرێت؛ Settings بپشکنە."
             return
         }
-        var req = URLRequest(url: url)
-        req.httpMethod = "POST"
+        var req = URLRequest(url: route.url)
         req.timeoutInterval = 30
-        req.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
-        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        req.httpBody = try? JSONSerialization.data(withJSONObject: payload)
+        APIRequestRouter.configure(&req, route: route, body: requestBody)
 
         URLSession.shared.dataTask(with: req) { data, response, err in
             DispatchQueue.main.async {
@@ -168,29 +161,17 @@ class AgentBrain: NSObject, ObservableObject, PHPhotoLibraryChangeObserver {
                 }
                 let statusCode = (response as? HTTPURLResponse)?.statusCode
                 guard let data = data else {
-                    self.responseLog = "وەڵام لە API نەگەیشت. \(statusCode.map { "HTTP \($0)" } ?? "")"
+                    self.responseLog = "وەڵام لە API نەگەیشت. \(statusCode.map { "HTTP \($0)" } ?? "")\nURL: \(route.safeEndpoint)"
                     return
                 }
 
                 if let statusCode = statusCode, !(200...299).contains(statusCode) {
-                    self.responseLog = self.apiErrorDescription(from: data, statusCode: statusCode, apiKey: apiKey)
+                    self.responseLog = self.apiErrorDescription(from: data, statusCode: statusCode, route: route)
                     return
                 }
 
-                guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-                    self.responseLog = "وەڵامی API فۆرماتی JSON ـی دروستی نییە. \(statusCode.map { "HTTP \($0)" } ?? "")"
-                    return
-                }
-                if let error = json["error"] as? [String: Any] {
-                    let message = error["message"] as? String ?? "هەڵەی نەناسراوی API"
-                    self.responseLog = "هەڵەی API \(statusCode.map { "(HTTP \($0)) " } ?? ""): \(message.replacingOccurrences(of: apiKey, with: "[hidden]"))"
-                    return
-                }
-                guard let choices = json["choices"] as? [[String: Any]],
-                      let msg = choices.first?["message"] as? [String: Any],
-                      let content = msg["content"] as? String else {
-                    let keys = json.keys.sorted().joined(separator: ", ")
-                    self.responseLog = "شێوازی وەڵامی API چاوەڕوانکراو نییە. HTTP \(statusCode.map(String.init) ?? "?"). بەشە بەردەستەکان: \(keys)"
+                guard let content = APIRequestRouter.responseText(from: data, provider: route.provider) else {
+                    self.responseLog = "شێوازی وەڵامی \(route.provider.displayName) چاوەڕوانکراو نییە. HTTP \(statusCode.map(String.init) ?? "?")\nURL: \(route.safeEndpoint)"
                     return
                 }
 
@@ -204,63 +185,42 @@ class AgentBrain: NSObject, ObservableObject, PHPhotoLibraryChangeObserver {
 
     func testAPIConnection(completion: @escaping (String) -> Void) {
         let cfg = AgentConfig.shared
-        let apiKey = Self.normalizedAPIKey(cfg.apiKey)
+        let apiKey = APIRequestRouter.normalizedAPIKey(cfg.apiKey)
         guard !apiKey.isEmpty else { completion("⚠️ کلیلی API بەتاڵە؛ کلیلی Gemini لە Settings دابنێ."); return }
-        var endpoint = cfg.apiEndpoint.trimmingCharacters(in: .whitespacesAndNewlines)
-        while endpoint.hasSuffix("%60") { endpoint.removeLast(3) }
-        while endpoint.hasSuffix(String(UnicodeScalar(96)!)) { endpoint.removeLast() }
-        guard let url = URL(string: endpoint), url.scheme?.lowercased() == "https" else {
-            completion("⚠️ Endpoint ـی API دەبێت URL ـێکی HTTPS ـی دروست بێت."); return
+        guard let route = APIRequestRouter.resolve(apiKey: apiKey, endpoint: cfg.apiEndpoint, model: cfg.selectedModel) else {
+            completion("⚠️ Endpoint یان ناوی مۆدێلی API دروست نییە."); return
         }
-        let payload: [String: Any] = [
-            "model": cfg.selectedModel.trimmingCharacters(in: .whitespacesAndNewlines),
-            "temperature": 0.0,
-            "messages": [["role": "user", "content": "Reply with only OK."]]
-        ]
-        guard let body = try? JSONSerialization.data(withJSONObject: payload) else {
+        let messages: [[String: Any]] = [["role": "user", "content": "Reply with only OK."]]
+        guard let payload = APIRequestRouter.makePayload(route: route, temperature: 0.0, messages: messages),
+              let body = try? JSONSerialization.data(withJSONObject: payload) else {
             completion("⚠️ نەتوانرا داواکاریی تاقیکردنەوە دروست بکرێت."); return
         }
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
+        var request = URLRequest(url: route.url)
         request.timeoutInterval = 25
-        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.httpBody = body
+        APIRequestRouter.configure(&request, route: route, body: body)
         URLSession.shared.dataTask(with: request) { data, response, error in
             DispatchQueue.main.async {
                 if let error { completion("❌ هەڵەی پەیوەندی: \(error.localizedDescription)"); return }
                 let status = (response as? HTTPURLResponse)?.statusCode ?? 0
-                guard let data else { completion("❌ وەڵامی API نەگەیشت. HTTP \(status)"); return }
+                guard let data else { completion("❌ وەڵامی API نەگەیشت. HTTP \(status)\nURL: \(route.safeEndpoint)"); return }
                 guard (200...299).contains(status) else {
-                    completion(self.apiErrorDescription(from: data, statusCode: status, apiKey: apiKey)); return
+                    completion(self.apiErrorDescription(from: data, statusCode: status, route: route)); return
                 }
                 let sharedKeyReady = !(AgentConfig.sharedDefaults?.string(forKey: "apiKey") ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
                 let liveStatus = sharedKeyReady ? "کلیلی هاوبەشی Live ئامادەیە." : "ئاگاداری: کلیلی App Group بۆ Live نەدۆزرایەوە."
-                completion("✅ Gemini وەڵامی پۆزەتیڤی دا (HTTP \(status)). \(liveStatus)")
+                guard APIRequestRouter.responseText(from: data, provider: route.provider) != nil else {
+                    completion("❌ وەڵامی پڕۆڤایدەر شێوازی چاوەڕوانکراوی نییە (HTTP \(status)).\nURL: \(route.safeEndpoint)")
+                    return
+                }
+                completion("✅ \(route.provider.displayName) وەڵامی پۆزەتیڤی دا (HTTP \(status)). \(liveStatus)")
             }
         }.resume()
     }
 
-    private static func normalizedAPIKey(_ raw: String) -> String {
-        let key = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-        return key.replacingOccurrences(of: #"(?i)^Bearer\s+"#, with: "", options: .regularExpression)
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-    }
-
-    private func apiErrorDescription(from data: Data, statusCode: Int, apiKey: String) -> String {
-        if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
-            let error = json["error"] as? [String: Any]
-            let message = (error?["message"] as? String)
-                ?? (json["message"] as? String)
-                ?? (error?["status"] as? String)
-                ?? "وەڵامی API هەڵەیە."
-            let safeMessage = message.replacingOccurrences(of: apiKey, with: "[hidden]")
-            let hint = statusCode == 401 && safeMessage.localizedCaseInsensitiveContains("authentication")
-                ? "\nڕێکخستن: endpoint ـەکە بێ کۆدی %60 بنووسە و تەنها خودی API key دابنێ؛ ئەپەکە خۆی Bearer زیاد دەکات."
-                : ""
-            return "هەڵەی API (HTTP \(statusCode)): \(safeMessage)\(hint)"
-        }
-        return "هەڵەی API (HTTP \(statusCode))؛ وەڵامەکە JSON نییە."
+    private func apiErrorDescription(from data: Data, statusCode: Int, route: APIRequestRoute) -> String {
+        let details = APIRequestRouter.errorDetails(from: data, apiKey: route.apiKey)
+        NSLog("[SuperAgent] HTTP %d from URL: %@", statusCode, route.safeEndpoint)
+        return "هەڵەی API (HTTP \(statusCode)): \(details)\nURL: \(route.safeEndpoint)"
     }
 
     private func processAgentActionsAndVectors(from text: String, originalImage: UIImage?) {
