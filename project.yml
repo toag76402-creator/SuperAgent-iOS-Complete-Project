@@ -43,6 +43,7 @@ targets:
     sources:
       - SuperAgentBroadcast
     info:
+      path: SuperAgentBroadcast/Info.plist
       properties:
         CFBundleDisplayName: SuperAgent Live Screen
         NSExtension:
