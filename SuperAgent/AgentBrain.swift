@@ -13,6 +13,7 @@ class AgentBrain: NSObject, ObservableObject, PHPhotoLibraryChangeObserver {
     @Published var liveStatus = "لایڤی شاشە ناچالاکە"
     private var lastLiveFrameTimestamp: Double = 0
     private var lastLiveResponseTimestamp: Double = 0
+    private var lastAutoAnalyzedScreenshotID: String?
 
     override init() {
         super.init()
@@ -22,7 +23,7 @@ class AgentBrain: NSObject, ObservableObject, PHPhotoLibraryChangeObserver {
     func photoLibraryDidChange(_ changeInstance: PHChange) {
         guard AgentConfig.shared.autoAnalyzeScreenshots else { return }
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
-            self.grabLatestPhotoAndAnalyze(isBOTB: true)
+            self.analyzeLatestScreenshotIfNew()
         }
     }
 
@@ -32,7 +33,22 @@ class AgentBrain: NSObject, ObservableObject, PHPhotoLibraryChangeObserver {
         opts.fetchLimit = 1
         let assets = PHAsset.fetchAssets(with: .image, options: opts)
         guard let asset = assets.firstObject else { return }
+        analyze(asset: asset, isBOTB: isBOTB)
+    }
 
+    private func analyzeLatestScreenshotIfNew() {
+        let opts = PHFetchOptions()
+        opts.sortDescriptors = [NSSortDescriptor(key: "creationDate", ascending: false)]
+        opts.fetchLimit = 20
+        let assets = PHAsset.fetchAssets(with: .image, options: opts)
+        guard let asset = (0..<assets.count).compactMap({ assets.object(at: $0) }).first(where: {
+            $0.mediaSubtypes.contains(.photoScreenshot)
+        }), asset.localIdentifier != lastAutoAnalyzedScreenshotID else { return }
+        lastAutoAnalyzedScreenshotID = asset.localIdentifier
+        analyze(asset: asset, isBOTB: true)
+    }
+
+    private func analyze(asset: PHAsset, isBOTB: Bool) {
         let reqOpts = PHImageRequestOptions()
         reqOpts.isSynchronous = true
         reqOpts.deliveryMode = .highQualityFormat
@@ -78,8 +94,7 @@ class AgentBrain: NSObject, ObservableObject, PHPhotoLibraryChangeObserver {
         if liveBroadcasting {
             AgentConfig.sharedDefaults?.set(prompt, forKey: "liveCustomPrompt")
         }
-        let apiKey = cfg.apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
-            .replacingOccurrences(of: #"(?i)^Bearer\s+"#, with: "", options: .regularExpression)
+        let apiKey = Self.normalizedAPIKey(cfg.apiKey)
         guard !apiKey.isEmpty else {
             self.responseLog = "⚠️ تکایە لە بەشی سێتینگ (⚙️) کلیلی API داخڵ بکە."
             return
@@ -139,6 +154,7 @@ class AgentBrain: NSObject, ObservableObject, PHPhotoLibraryChangeObserver {
         }
         var req = URLRequest(url: url)
         req.httpMethod = "POST"
+        req.timeoutInterval = 30
         req.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         req.httpBody = try? JSONSerialization.data(withJSONObject: payload)
@@ -184,6 +200,51 @@ class AgentBrain: NSObject, ObservableObject, PHPhotoLibraryChangeObserver {
                 FloatingPiPController.shared.updateOverlay(coords: self.coordinatesDisplay, text: content)
             }
         }.resume()
+    }
+
+    func testAPIConnection(completion: @escaping (String) -> Void) {
+        let cfg = AgentConfig.shared
+        let apiKey = Self.normalizedAPIKey(cfg.apiKey)
+        guard !apiKey.isEmpty else { completion("⚠️ کلیلی API بەتاڵە؛ کلیلی Gemini لە Settings دابنێ."); return }
+        var endpoint = cfg.apiEndpoint.trimmingCharacters(in: .whitespacesAndNewlines)
+        while endpoint.hasSuffix("%60") { endpoint.removeLast(3) }
+        while endpoint.hasSuffix(String(UnicodeScalar(96)!)) { endpoint.removeLast() }
+        guard let url = URL(string: endpoint), url.scheme?.lowercased() == "https" else {
+            completion("⚠️ Endpoint ـی API دەبێت URL ـێکی HTTPS ـی دروست بێت."); return
+        }
+        let payload: [String: Any] = [
+            "model": cfg.selectedModel.trimmingCharacters(in: .whitespacesAndNewlines),
+            "temperature": 0.0,
+            "messages": [["role": "user", "content": "Reply with only OK."]]
+        ]
+        guard let body = try? JSONSerialization.data(withJSONObject: payload) else {
+            completion("⚠️ نەتوانرا داواکاریی تاقیکردنەوە دروست بکرێت."); return
+        }
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.timeoutInterval = 25
+        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = body
+        URLSession.shared.dataTask(with: request) { data, response, error in
+            DispatchQueue.main.async {
+                if let error { completion("❌ هەڵەی پەیوەندی: \(error.localizedDescription)"); return }
+                let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+                guard let data else { completion("❌ وەڵامی API نەگەیشت. HTTP \(status)"); return }
+                guard (200...299).contains(status) else {
+                    completion(self.apiErrorDescription(from: data, statusCode: status, apiKey: apiKey)); return
+                }
+                let sharedKeyReady = !(AgentConfig.sharedDefaults?.string(forKey: "apiKey") ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                let liveStatus = sharedKeyReady ? "کلیلی هاوبەشی Live ئامادەیە." : "ئاگاداری: کلیلی App Group بۆ Live نەدۆزرایەوە."
+                completion("✅ Gemini وەڵامی پۆزەتیڤی دا (HTTP \(status)). \(liveStatus)")
+            }
+        }.resume()
+    }
+
+    private static func normalizedAPIKey(_ raw: String) -> String {
+        let key = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        return key.replacingOccurrences(of: #"(?i)^Bearer\s+"#, with: "", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     private func apiErrorDescription(from data: Data, statusCode: Int, apiKey: String) -> String {
