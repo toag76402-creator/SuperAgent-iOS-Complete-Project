@@ -12,6 +12,7 @@ xcodebuild clean build \
   CODE_SIGNING_REQUIRED=NO \
   CODE_SIGNING_ALLOWED=NO
 
+test -d ./build/Build/Products/Release-iphoneos/SuperAgent.app/PlugIns/SuperAgentBroadcast.appex
 rm -rf Payload SuperAgent.ipa
 mkdir -p Payload
 cp -r ./build/Build/Products/Release-iphoneos/SuperAgent.app Payload/
