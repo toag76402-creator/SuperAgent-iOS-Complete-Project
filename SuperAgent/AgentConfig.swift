@@ -51,9 +51,25 @@ class AgentConfig: ObservableObject {
     }
     
     init() {
-        self.apiEndpoint = UserDefaults.standard.string(forKey: "apiEndpoint") ?? "https://openrouter.ai/api/v1/chat/completions"
-        self.apiKey = UserDefaults.standard.string(forKey: "apiKey") ?? ""
-        self.selectedModel = UserDefaults.standard.string(forKey: "selectedModel") ?? "qwen/qwen-2.5-vl-72b-instruct"
+        let defaults = UserDefaults.standard
+        let savedEndpoint = defaults.string(forKey: "apiEndpoint")
+        let savedModel = defaults.string(forKey: "selectedModel")
+        let geminiEndpoint = "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions"
+        let legacyOpenRouterDefault = "https://openrouter.ai/api/v1/chat/completions"
+        let wasOpenRouterDefault = savedEndpoint == nil
+            || savedEndpoint == legacyOpenRouterDefault
+            || savedEndpoint == legacyOpenRouterDefault + "%60"
+        self.apiEndpoint = wasOpenRouterDefault ? geminiEndpoint : (savedEndpoint ?? geminiEndpoint)
+        if wasOpenRouterDefault {
+            defaults.set(geminiEndpoint, forKey: "apiEndpoint")
+        }
+        self.apiKey = defaults.string(forKey: "apiKey") ?? ""
+        let legacyOpenRouterModel = "qwen/qwen-2.5-vl-72b-instruct"
+        let shouldUseGeminiModel = wasOpenRouterDefault && (savedModel == nil || savedModel == legacyOpenRouterModel)
+        self.selectedModel = shouldUseGeminiModel ? "gemini-3.8-flash" : (savedModel ?? "gemini-3.8-flash")
+        if shouldUseGeminiModel {
+            defaults.set("gemini-3.8-flash", forKey: "selectedModel")
+        }
         self.temperature = UserDefaults.standard.object(forKey: "temperature") as? Double ?? 0.15
         self.accentColorHex = UserDefaults.standard.string(forKey: "accentColorHex") ?? "#10B981"
         self.forcePrefillEnabled = UserDefaults.standard.object(forKey: "forcePrefillEnabled") as? Bool ?? true
