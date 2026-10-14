@@ -46,7 +46,9 @@ class AgentBrain: NSObject, ObservableObject, PHPhotoLibraryChangeObserver {
     
     func executeAgent(prompt: String, image: UIImage?, isBOTBMode: Bool, forceBypass: Bool = false) {
         let cfg = AgentConfig.shared
-        guard !cfg.apiKey.isEmpty else {
+        let apiKey = cfg.apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
+            .replacingOccurrences(of: #"(?i)^Bearer\s+"#, with: "", options: .regularExpression)
+        guard !apiKey.isEmpty else {
             self.responseLog = "⚠️ تکایە لە بەشی سێتینگ (⚙️) کلیلی API داخڵ بکە."
             return
         }
@@ -95,11 +97,18 @@ class AgentBrain: NSObject, ObservableObject, PHPhotoLibraryChangeObserver {
             "messages": messages
         ]
         
-        guard let url = URL(string: cfg.apiEndpoint) else { return }
+        var endpoint = cfg.apiEndpoint.trimmingCharacters(in: .whitespacesAndNewlines)
+        while endpoint.hasSuffix("%60") { endpoint.removeLast(3) }
+        while endpoint.hasSuffix(String(UnicodeScalar(96)!)) { endpoint.removeLast() }
+        guard let url = URL(string: endpoint) else {
+            self.isThinking = false
+            self.responseLog = "URL ـی API دروست نییە؛ تکایە endpoint ـەکە بپشکنە."
+            return
+        }
         var req = URLRequest(url: url)
         req.httpMethod = "POST"
-        req.addValue("Bearer \(cfg.apiKey)", forHTTPHeaderField: "Authorization")
-        req.addValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         req.httpBody = try? JSONSerialization.data(withJSONObject: payload)
         
         URLSession.shared.dataTask(with: req) { data, response, err in
@@ -115,7 +124,7 @@ class AgentBrain: NSObject, ObservableObject, PHPhotoLibraryChangeObserver {
                     return
                 }
                 if let statusCode = statusCode, !(200...299).contains(statusCode) {
-                    self.responseLog = self.apiErrorDescription(from: data, statusCode: statusCode, apiKey: cfg.apiKey)
+                    self.responseLog = self.apiErrorDescription(from: data, statusCode: statusCode, apiKey: apiKey)
                     return
                 }
                 guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
@@ -124,7 +133,7 @@ class AgentBrain: NSObject, ObservableObject, PHPhotoLibraryChangeObserver {
                 }
                 if let error = json["error"] as? [String: Any] {
                     let message = error["message"] as? String ?? "هەڵەی نەناسراوی API"
-                    self.responseLog = "هەڵەی API \(statusCode.map { "(HTTP \($0)) " } ?? ""): \(message.replacingOccurrences(of: cfg.apiKey, with: "[hidden]"))"
+                    self.responseLog = "هەڵەی API \(statusCode.map { "(HTTP \($0)) " } ?? ""): \(message.replacingOccurrences(of: apiKey, with: "[hidden]"))"
                     return
                 }
                 guard let choices = json["choices"] as? [[String: Any]],
@@ -150,7 +159,10 @@ class AgentBrain: NSObject, ObservableObject, PHPhotoLibraryChangeObserver {
                 ?? (error?["status"] as? String)
                 ?? "وەڵامی API هەڵەیە."
             let safeMessage = message.replacingOccurrences(of: apiKey, with: "[hidden]")
-            return "هەڵەی API (HTTP \(statusCode)): \(safeMessage)"
+            let hint = statusCode == 401 && safeMessage.localizedCaseInsensitiveContains("authentication")
+                ? "\nڕێکخستن: endpoint ـەکە بێ کۆدی %60 بنووسە و تەنها خودی API key دابنێ؛ ئەپەکە خۆی Bearer زیاد دەکات."
+                : ""
+            return "هەڵەی API (HTTP \(statusCode)): \(safeMessage)\(hint)"
         }
         return "هەڵەی API (HTTP \(statusCode))؛ وەڵامەکە JSON نییە."
     }
